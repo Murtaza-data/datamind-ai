@@ -1,0 +1,13 @@
+﻿fastapi
+uvicorn
+langchain
+langchain-groq
+langchain-core
+langgraph
+langchain-community
+pandas
+pydantic
+plotly
+streamlit
+requests
+python-multipart
