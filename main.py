@@ -71,10 +71,11 @@ setup_database()
 # 2. LLM SETUP
 # ════════════════════════════════════════════════════════
 # Initialize Groq LLM — used by SQL Generator and Results Formatter
+import os
 
 llm = ChatGroq(
     model="llama-3.1-8b-instant",
-    api_key="YOUR_GROQ_API_KEY"
+    api_key=os.getenv("GROQ_API_KEY")
 )
 
 # ════════════════════════════════════════════════════════
