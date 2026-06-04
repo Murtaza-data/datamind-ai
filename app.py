@@ -8,7 +8,7 @@ import plotly.express as px
 # 1. CONFIGURATION
 # ════════════════════════════════════════════════════════
 # FastAPI backend URL — replace with your Render URL later
-API_URL = "https://earshot-cube-shrapnel.ngrok-free.dev"
+API_URL = "https://datamind-ai-umrm.onrender.com"
 
 # Page setup
 st.set_page_config(
