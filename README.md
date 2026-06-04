@@ -9,10 +9,6 @@ An AI-powered data analyst that converts plain English questions into SQL querie
 ## What It Does
 Users ask business questions in plain English. The system converts them into SQL queries, runs them against a real e-commerce database with 100,000+ orders, and returns clear answers.
 
-## Example Questions
-- What are the top 5 product categories by sales?
-- Which city has the most orders?
-- What is the total revenue from all payments?
 
 ## Tech Stack
 - Frontend: Streamlit
