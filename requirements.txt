@@ -1,4 +1,4 @@
-﻿fastapi
+fastapi
 uvicorn
 langchain
 langchain-groq
@@ -11,3 +11,5 @@ plotly
 streamlit
 requests
 python-multipart
+psycopg2-binary
+sqlalchemy
