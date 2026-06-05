@@ -2,9 +2,8 @@
 
 An AI-powered data analyst that converts plain English questions into SQL queries using a multi-agent LangGraph pipeline, FastAPI backend, and Streamlit frontend.
 
-## Live Demo
-- Frontend: https://datamind-ai-bmzbmbz4itgvehf5lequrt.streamlit.app/
-- Backend API: https://datamind-ai-umrm.onrender.com/docs
+## 🚀 Live Demo
+- **Try it here:** https://datamind-ai-bmzbmbz4itgvehf5lequrt.streamlit.app/
 
 ## What It Does
 Users ask business questions in plain English. The system converts them into SQL queries, runs them against a real e-commerce database with 100,000+ orders, and returns clear answers.
