@@ -3,6 +3,8 @@ import uvicorn
 import sqlite3
 import hashlib
 import pandas as pd
+import os
+from sqlalchemy import create_engine, text
 from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
@@ -17,8 +19,10 @@ from datetime import datetime
 # Connect to SQLite database and load all CSV data
 
 def setup_database():
-    conn = sqlite3.connect("datamind.db")
-
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    engine = create_engine(DATABASE_URL)
+    conn = engine.connect()
+    
     # Load Olist CSV files into database
     customers = pd.read_csv("olist_customers_dataset.csv")
     orders = pd.read_csv("olist_orders_dataset.csv")
@@ -100,7 +104,8 @@ class AgentState(TypedDict):
 # Reads database structure so SQL Generator knows what exists
 def schema_reader(state: AgentState) -> AgentState:
     try:
-        conn = sqlite3.connect("datamind.db")
+        engine = create_engine(os.getenv("DATABASE_URL"))
+        conn = engine.connect()
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = cursor.fetchall()
@@ -139,7 +144,8 @@ def sql_generator(state: AgentState) -> AgentState:
 # Runs the SQL query on the database and returns raw results
 def sql_executor(state: AgentState) -> AgentState:
     try:
-        conn = sqlite3.connect("datamind.db")
+        engine = create_engine(os.getenv("DATABASE_URL"))
+        conn = engine.connect()
         results = pd.read_sql(state["sql_query"], conn)
         conn.close()
         raw_results = results.to_string(index=False)
@@ -162,7 +168,8 @@ def results_formatter(state: AgentState) -> AgentState:
         final_answer = response.content.strip()
 
         # Save question and answer to query history
-        conn = sqlite3.connect("datamind.db")
+        engine = create_engine(os.getenv("DATABASE_URL"))
+        conn = engine.connect()
         conn.execute("""
             INSERT INTO query_history (username, question, sql_query, answer, timestamp)
             VALUES (?, ?, ?, ?, ?)
@@ -208,7 +215,8 @@ def hash_password(password: str) -> str:
 # Register new user — saves username and hashed password
 def register_user(username: str, password: str) -> dict:
     try:
-        conn = sqlite3.connect("datamind.db")
+        engine = create_engine(os.getenv("DATABASE_URL"))
+        conn = engine.connect()
         conn.execute("""
             INSERT INTO users (username, password_hash, created_at)
             VALUES (?, ?, ?)
@@ -223,7 +231,8 @@ def register_user(username: str, password: str) -> dict:
 # Login user — checks username and password against database
 def login_user(username: str, password: str) -> dict:
     try:
-        conn = sqlite3.connect("datamind.db")
+        engine = create_engine(os.getenv("DATABASE_URL"))
+        conn = engine.connect()
         result = pd.read_sql("""
             SELECT user_id, username FROM users
             WHERE username = ? AND password_hash = ?
@@ -291,7 +300,8 @@ def ask_question(request: QuestionRequest):
 # Returns query history for a specific user
 @app.get("/history/{username}")
 def get_history(username: str):
-    conn = sqlite3.connect("datamind.db")
+    engine = create_engine(os.getenv("DATABASE_URL"))
+    conn = engine.connect()
     history = pd.read_sql("""
         SELECT question, answer, timestamp
         FROM query_history
