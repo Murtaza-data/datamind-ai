@@ -1,9 +1,8 @@
 import uvicorn
-import sqlite3
 import hashlib
 import pandas as pd
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
@@ -16,18 +15,16 @@ from datetime import datetime
 # 1. DATABASE SETUP
 # ════════════════════════════════════════════════════════
 
-DB_PATH = "datamind.db"
-DB_URL = f"sqlite:///{DB_PATH}"
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
 
 def setup_database():
-    engine = create_engine(DB_URL)
-
-    customers    = pd.read_csv("olist_customers_dataset.csv")
-    orders       = pd.read_csv("olist_orders_dataset.csv")
-    order_items  = pd.read_csv("olist_order_items_dataset.csv")
-    products     = pd.read_csv("olist_products_dataset.csv")
-    payments     = pd.read_csv("olist_order_payments_dataset.csv")
-    translation  = pd.read_csv("product_category_name_translation.csv")
+    customers   = pd.read_csv("olist_customers_dataset.csv")
+    orders      = pd.read_csv("olist_orders_dataset.csv")
+    order_items = pd.read_csv("olist_order_items_dataset.csv")
+    products    = pd.read_csv("olist_products_dataset.csv")
+    payments    = pd.read_csv("olist_order_payments_dataset.csv")
+    translation = pd.read_csv("product_category_name_translation.csv")
 
     products = products.merge(translation, on="product_category_name", how="left")
     products["product_category_name"] = products["product_category_name_english"].fillna(products["product_category_name"])
@@ -40,28 +37,25 @@ def setup_database():
         products.to_sql("products",      conn, if_exists="replace", index=False)
         payments.to_sql("payments",      conn, if_exists="replace", index=False)
 
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS query_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            question TEXT,
-            sql_query TEXT,
-            answer TEXT,
-            timestamp TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS query_history (
+                id SERIAL PRIMARY KEY,
+                username TEXT,
+                question TEXT,
+                sql_query TEXT,
+                answer TEXT,
+                timestamp TEXT
+            )
+        """))
+        conn.commit()
     print("✅ Database ready!")
 
 setup_database()
@@ -94,18 +88,22 @@ class AgentState(TypedDict):
 
 def schema_reader(state: AgentState) -> AgentState:
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = cursor.fetchall()
-        schema_info = ""
-        for table in tables:
-            table_name = table[0]
-            cursor.execute(f"PRAGMA table_info({table_name})")
-            columns = cursor.fetchall()
-            column_names = [col[1] for col in columns]
-            schema_info += f"Table: {table_name}\nColumns: {', '.join(column_names)}\n\n"
-        conn.close()
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            """))
+            tables = result.fetchall()
+            schema_info = ""
+            for table in tables:
+                table_name = table[0]
+                col_result = conn.execute(text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = :table_name AND table_schema = 'public'
+                """), {"table_name": table_name})
+                columns = col_result.fetchall()
+                column_names = [col[0] for col in columns]
+                schema_info += f"Table: {table_name}\nColumns: {', '.join(column_names)}\n\n"
         return {**state, "schema": schema_info}
     except Exception as e:
         return {**state, "error": str(e)}
@@ -117,7 +115,7 @@ def sql_generator(state: AgentState) -> AgentState:
         Here is the database schema:
         {state["schema"]}
         The user asked: {state["question"]}
-        Write a proper SQLite SQL query to answer this question.
+        Write a proper PostgreSQL SQL query to answer this question.
         Return ONLY the SQL query. Nothing else. No explanation. No markdown.
         """
         response = llm.invoke([HumanMessage(content=prompt)])
@@ -128,7 +126,6 @@ def sql_generator(state: AgentState) -> AgentState:
 
 def sql_executor(state: AgentState) -> AgentState:
     try:
-        engine = create_engine(DB_URL)
         with engine.connect() as conn:
             results = pd.read_sql(state["sql_query"], conn)
         raw_results = results.to_string(index=False)
@@ -148,20 +145,18 @@ def results_formatter(state: AgentState) -> AgentState:
         response = llm.invoke([HumanMessage(content=prompt)])
         final_answer = response.content.strip()
 
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO query_history (username, question, sql_query, answer, timestamp)
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            state["username"],
-            state["question"],
-            state["sql_query"],
-            final_answer,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ))
-        conn.commit()
-        conn.close()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO query_history (username, question, sql_query, answer, timestamp)
+                VALUES (:username, :question, :sql_query, :answer, :timestamp)
+            """), {
+                "username":  state["username"],
+                "question":  state["question"],
+                "sql_query": state["sql_query"],
+                "answer":    final_answer,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            conn.commit()
         return {**state, "final_answer": final_answer}
     except Exception as e:
         return {**state, "error": str(e)}
@@ -171,14 +166,14 @@ def results_formatter(state: AgentState) -> AgentState:
 # ════════════════════════════════════════════════════════
 
 graph = StateGraph(AgentState)
-graph.add_node("schema_reader",      schema_reader)
-graph.add_node("sql_generator",      sql_generator)
-graph.add_node("sql_executor",       sql_executor)
-graph.add_node("results_formatter",  results_formatter)
-graph.add_edge("schema_reader",      "sql_generator")
-graph.add_edge("sql_generator",      "sql_executor")
-graph.add_edge("sql_executor",       "results_formatter")
-graph.add_edge("results_formatter",  END)
+graph.add_node("schema_reader",     schema_reader)
+graph.add_node("sql_generator",     sql_generator)
+graph.add_node("sql_executor",      sql_executor)
+graph.add_node("results_formatter", results_formatter)
+graph.add_edge("schema_reader",     "sql_generator")
+graph.add_edge("sql_generator",     "sql_executor")
+graph.add_edge("sql_executor",      "results_formatter")
+graph.add_edge("results_formatter", END)
 graph.set_entry_point("schema_reader")
 pipeline = graph.compile()
 print("✅ LangGraph pipeline ready!")
@@ -192,29 +187,29 @@ def hash_password(password: str) -> str:
 
 def register_user(username: str, password: str) -> dict:
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO users (username, password_hash, created_at)
-            VALUES (?, ?, ?)
-        """, (username, hash_password(password), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        conn.close()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO users (username, password_hash, created_at)
+                VALUES (:username, :password_hash, :created_at)
+            """), {
+                "username":      username,
+                "password_hash": hash_password(password),
+                "created_at":    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            conn.commit()
         return {"success": True, "message": f"User {username} registered successfully!"}
     except:
         return {"success": False, "message": "Username already exists."}
 
 def login_user(username: str, password: str) -> dict:
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT user_id, username FROM users
-            WHERE username = ? AND password_hash = ?
-        """, (username, hash_password(password)))
-        result = cursor.fetchone()
-        conn.close()
-        if result:
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT user_id, username FROM users
+                WHERE username = :username AND password_hash = :password_hash
+            """), {"username": username, "password_hash": hash_password(password)})
+            row = result.fetchone()
+        if row:
             return {"success": True, "message": f"Welcome back {username}!", "username": username}
         else:
             return {"success": False, "message": "Wrong username or password."}
@@ -266,16 +261,14 @@ def ask_question(request: QuestionRequest):
 
 @app.get("/history/{username}")
 def get_history(username: str):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT question, answer, timestamp
-        FROM query_history
-        WHERE username = ?
-        ORDER BY timestamp DESC
-    """, (username,))
-    rows = cursor.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT question, answer, timestamp
+            FROM query_history
+            WHERE username = :username
+            ORDER BY timestamp DESC
+        """), {"username": username})
+        rows = result.fetchall()
     return [{"question": r[0], "answer": r[1], "timestamp": r[2]} for r in rows]
 
 # ════════════════════════════════════════════════════════
