@@ -135,6 +135,10 @@ def sql_executor(state: AgentState) -> AgentState:
 
 def results_formatter(state: AgentState) -> AgentState:
     try:
+        # If previous agent failed, return error instead of hallucinating
+        if state.get("error") or not state.get("raw_results"):
+            return {**state, "final_answer": "Sorry, I could not retrieve data for that question. Please try rephrasing it."}
+
         prompt = f"""
         You are a helpful data analyst assistant.
         The user asked: {state["question"]}
@@ -160,7 +164,6 @@ def results_formatter(state: AgentState) -> AgentState:
         return {**state, "final_answer": final_answer}
     except Exception as e:
         return {**state, "error": str(e)}
-
 # ════════════════════════════════════════════════════════
 # 5. LANGGRAPH PIPELINE
 # ════════════════════════════════════════════════════════
