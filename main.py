@@ -116,10 +116,12 @@ def sql_generator(state: AgentState) -> AgentState:
         {state["schema"]}
         The user asked: {state["question"]}
         Write a proper PostgreSQL SQL query to answer this question.
+        Always include LIMIT 20 at the end unless the user asks for a specific number.
         Return ONLY the SQL query. Nothing else. No explanation. No markdown.
         """
         response = llm.invoke([HumanMessage(content=prompt)])
         sql_query = response.content.strip()
+        sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
         return {**state, "sql_query": sql_query}
     except Exception as e:
         return {**state, "error": str(e)}
@@ -128,11 +130,12 @@ def sql_executor(state: AgentState) -> AgentState:
     try:
         with engine.connect() as conn:
             results = pd.read_sql(state["sql_query"], conn)
+        results = results.head(50)  # Safety cap — never pass more than 50 rows to LLM
         raw_results = results.to_string(index=False)
         return {**state, "raw_results": raw_results}
     except Exception as e:
         return {**state, "error": str(e)}
-
+        
 def results_formatter(state: AgentState) -> AgentState:
     try:
         # If previous agent failed, return error instead of hallucinating
