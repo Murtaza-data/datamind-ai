@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import pandas as pd
@@ -7,10 +6,9 @@ import plotly.express as px
 # ════════════════════════════════════════════════════════
 # 1. CONFIGURATION
 # ════════════════════════════════════════════════════════
-# FastAPI backend URL — replace with your Render URL later
+
 API_URL = "https://datamind-ai-umrm.onrender.com"
 
-# Page setup
 st.set_page_config(
     page_title="DataMind AI",
     page_icon="🧠",
@@ -20,7 +18,6 @@ st.set_page_config(
 # ════════════════════════════════════════════════════════
 # 2. SESSION STATE
 # ════════════════════════════════════════════════════════
-# Remember if user is logged in or not
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -28,19 +25,87 @@ if "username" not in st.session_state:
     st.session_state["username"] = ""
 
 # ════════════════════════════════════════════════════════
-# 3. LOGIN / REGISTER PAGE
+# 3. CHART FUNCTION
 # ════════════════════════════════════════════════════════
-# Only shown when user is NOT logged in
+
+def create_chart(data, question=""):
+    if not data or len(data) == 0:
+        return None
+
+    df = pd.DataFrame(data)
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    text_cols = df.select_dtypes(include=["object"]).columns.tolist()
+
+    if not numeric_cols or not text_cols:
+        return None
+
+    x_col = text_cols[0]
+    y_col = numeric_cols[0]
+
+    # Shorten long labels
+    df[x_col] = df[x_col].astype(str).str[:30]
+
+    question_lower = question.lower()
+
+    # ── Line chart — for time/trend questions ─────────
+    if any(word in question_lower for word in ["trend", "over time", "monthly", "yearly", "by month", "by year", "by date"]):
+        fig = px.line(
+            df, x=x_col, y=y_col,
+            title=f"📈 {y_col.replace('_', ' ').title()} over {x_col.replace('_', ' ').title()}",
+            markers=True,
+            template="plotly_white"
+        )
+
+    # ── Pie chart — for distribution/share questions ──
+    elif any(word in question_lower for word in ["percentage", "share", "distribution", "proportion", "breakdown"]):
+        fig = px.pie(
+            df, names=x_col, values=y_col,
+            title=f"🥧 {y_col.replace('_', ' ').title()} by {x_col.replace('_', ' ').title()}",
+            color_discrete_sequence=px.colors.sequential.Blues_r,
+            template="plotly_white"
+        )
+
+    # ── Horizontal bar — for rankings with long names or least/lowest questions ──
+    elif len(df) > 6 or any(word in question_lower for word in ["least", "lowest", "worst", "bottom"]):
+        fig = px.bar(
+            df, x=y_col, y=x_col,
+            orientation="h",
+            title=f"📊 {y_col.replace('_', ' ').title()} by {x_col.replace('_', ' ').title()}",
+            color=y_col,
+            color_continuous_scale="Reds",
+            template="plotly_white"
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+
+    # ── Vertical bar — default for top/best/highest ───
+    else:
+        fig = px.bar(
+            df, x=x_col, y=y_col,
+            title=f"📊 {y_col.replace('_', ' ').title()} by {x_col.replace('_', ' ').title()}",
+            color=y_col,
+            color_continuous_scale="Blues",
+            template="plotly_white"
+        )
+
+    fig.update_layout(
+        xaxis_tickangle=-45,
+        showlegend=False,
+        height=450,
+        margin=dict(b=120)
+    )
+    return fig
+
+# ════════════════════════════════════════════════════════
+# 4. LOGIN / REGISTER PAGE
+# ════════════════════════════════════════════════════════
 
 def show_auth_page():
     st.title("🧠 DataMind AI")
     st.subheader("Intelligent Data Analyst")
     st.divider()
 
-    # Two tabs — Login and Register
     tab1, tab2 = st.tabs(["Login", "Register"])
 
-    # ── Login Tab ─────────────────────────────────────
     with tab1:
         st.subheader("Login to your account")
         username = st.text_input("Username", key="login_username")
@@ -48,13 +113,10 @@ def show_auth_page():
 
         if st.button("Login"):
             if username and password:
-                # Call FastAPI login endpoint
                 response = requests.post(f"{API_URL}/login",
                     json={"username": username, "password": password})
                 result = response.json()
-
                 if result["success"]:
-                    # Save login state
                     st.session_state["logged_in"] = True
                     st.session_state["username"] = username
                     st.success(result["message"])
@@ -64,7 +126,6 @@ def show_auth_page():
             else:
                 st.warning("Please enter username and password.")
 
-    # ── Register Tab ──────────────────────────────────
     with tab2:
         st.subheader("Create a new account")
         new_username = st.text_input("Choose Username", key="reg_username")
@@ -72,11 +133,9 @@ def show_auth_page():
 
         if st.button("Register"):
             if new_username and new_password:
-                # Call FastAPI register endpoint
                 response = requests.post(f"{API_URL}/register",
                     json={"username": new_username, "password": new_password})
                 result = response.json()
-
                 if result["success"]:
                     st.success(result["message"] + " Please login now.")
                 else:
@@ -85,16 +144,13 @@ def show_auth_page():
                 st.warning("Please fill in all fields.")
 
 # ════════════════════════════════════════════════════════
-# 4. MAIN APP PAGE
+# 5. MAIN APP PAGE
 # ════════════════════════════════════════════════════════
-# Only shown when user IS logged in
 
 def show_main_app():
-    # ── Header ────────────────────────────────────────
     st.title("🧠 DataMind AI")
     st.subheader(f"Welcome, {st.session_state['username']}!")
 
-    # Logout button
     if st.button("Logout"):
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
@@ -102,7 +158,6 @@ def show_main_app():
 
     st.divider()
 
-    # ── Two tabs — Ask and History ─────────────────────
     tab1, tab2 = st.tabs(["Ask a Question", "Query History"])
 
     # ── Ask Question Tab ──────────────────────────────
@@ -114,7 +169,6 @@ def show_main_app():
         if st.button("Ask"):
             if question:
                 with st.spinner("Analyzing data..."):
-                    # Call FastAPI ask endpoint
                     response = requests.post(f"{API_URL}/ask",
                         json={
                             "question": question,
@@ -122,27 +176,22 @@ def show_main_app():
                         })
                     result = response.json()
 
-                # Show answer
+                # ── Answer ────────────────────────────
                 st.success("Answer:")
                 st.write(result["answer"])
 
-                # Show SQL query used
+                # ── Chart ─────────────────────────────
+                raw_data = result.get("raw_data", [])
+                fig = create_chart(raw_data, question)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No chart available for this result.")
+
+                # ── SQL Query ─────────────────────────
                 with st.expander("See SQL Query Used"):
                     st.code(result["sql_query"], language="sql")
 
-                # ── Data Visualization ─────────────────
-                # Try to create a chart from the results
-                try:
-                    # Call history to get latest result for chart
-                    history_response = requests.get(
-                        f"{API_URL}/history/{st.session_state['username']}")
-                    history_data = history_response.json()
-
-                    if history_data:
-                        latest = history_data[0]
-                        st.info("💡 Tip: Check Query History tab to see all your past questions.")
-                except:
-                    pass
             else:
                 st.warning("Please enter a question.")
 
@@ -150,7 +199,6 @@ def show_main_app():
     with tab2:
         st.subheader("Your Query History")
 
-        # Call FastAPI history endpoint
         response = requests.get(
             f"{API_URL}/history/{st.session_state['username']}")
         history = response.json()
@@ -163,9 +211,8 @@ def show_main_app():
             st.info("No history yet. Ask your first question!")
 
 # ════════════════════════════════════════════════════════
-# 5. APP FLOW CONTROL
+# 6. APP FLOW CONTROL
 # ════════════════════════════════════════════════════════
-# Show login page or main app based on login status
 
 if st.session_state["logged_in"] == False:
     show_auth_page()
