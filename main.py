@@ -2,6 +2,7 @@ import uvicorn
 import hashlib
 import pandas as pd
 import os
+import json
 from sqlalchemy import create_engine, text
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -80,9 +81,9 @@ class AgentState(TypedDict):
     schema: str
     sql_query: str
     raw_results: str
+    raw_data: str        
     final_answer: str
     error: str
-
 # ════════════════════════════════════════════════════════
 # 4. THE 4 AGENTS
 # ════════════════════════════════════════════════════════
@@ -131,9 +132,10 @@ def sql_executor(state: AgentState) -> AgentState:
     try:
         with engine.connect() as conn:
             results = pd.read_sql(state["sql_query"], conn)
-        results = results.head(50)  # Safety cap — never pass more than 50 rows to LLM
+        results = results.head(50)
         raw_results = results.to_string(index=False)
-        return {**state, "raw_results": raw_results}
+        raw_data = results.to_json(orient="records")   
+        return {**state, "raw_results": raw_results, "raw_data": raw_data}  
     except Exception as e:
         return {**state, "error": str(e)}
         
@@ -257,13 +259,15 @@ def ask_question(request: QuestionRequest):
         "schema":       "",
         "sql_query":    "",
         "raw_results":  "",
+        "raw_data":     "",        # ← add this
         "final_answer": "",
         "error":        ""
     })
     return {
         "question":  request.question,
         "answer":    result["final_answer"],
-        "sql_query": result["sql_query"]
+        "sql_query": result["sql_query"],
+        "raw_data":  json.loads(result["raw_data"]) if result.get("raw_data") else []  
     }
 
 @app.get("/history/{username}")
