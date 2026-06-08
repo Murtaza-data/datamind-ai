@@ -55,7 +55,7 @@ Olist Brazilian E-Commerce Dataset from Kaggle
 1. Clone the repo: git clone https://github.com/Murtaza-data/datamind-ai.git
 2. Install dependencies: pip install -r requirements.txt
 3. Set environment variables: 
-GROQ_API_KEY=your_groq_api_key
+GROQ_API_KEY=your_groq_api_key, 
 DATABASE_URL=your_postgresql_connection_string
 4. Run backend: python main.py
 5. Run frontend: streamlit run app.py
