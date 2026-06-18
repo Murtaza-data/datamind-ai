@@ -67,6 +67,7 @@ flowchart TD
 ![Asking a question and chart](screenshots/answer.png)
 
 <br>
+
 **Query history**
 
 ![Query history](screenshots/history.png)
