@@ -4,13 +4,18 @@ import pandas as pd
 import os
 import json
 from sqlalchemy import create_engine, text
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, END
 from typing import TypedDict
 from datetime import datetime
+
+# Rate limiting
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # ════════════════════════════════════════════════════════
 # 1. DATABASE SETUP
@@ -68,7 +73,6 @@ setup_database()
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY")
-
 )
 
 # ════════════════════════════════════════════════════════
@@ -81,9 +85,10 @@ class AgentState(TypedDict):
     schema: str
     sql_query: str
     raw_results: str
-    raw_data: str        
+    raw_data: str
     final_answer: str
     error: str
+
 # ════════════════════════════════════════════════════════
 # 4. THE 4 AGENTS
 # ════════════════════════════════════════════════════════
@@ -134,14 +139,13 @@ def sql_executor(state: AgentState) -> AgentState:
             results = pd.read_sql(state["sql_query"], conn)
         results = results.head(50)
         raw_results = results.to_string(index=False)
-        raw_data = results.to_json(orient="records")   
-        return {**state, "raw_results": raw_results, "raw_data": raw_data}  
+        raw_data = results.to_json(orient="records")
+        return {**state, "raw_results": raw_results, "raw_data": raw_data}
     except Exception as e:
         return {**state, "error": str(e)}
-        
+
 def results_formatter(state: AgentState) -> AgentState:
     try:
-        # If previous agent failed, return error instead of hallucinating
         if state.get("error") or not state.get("raw_results"):
             return {**state, "final_answer": "Sorry, I could not retrieve data for that question. Please try rephrasing it."}
 
@@ -170,6 +174,7 @@ def results_formatter(state: AgentState) -> AgentState:
         return {**state, "final_answer": final_answer}
     except Exception as e:
         return {**state, "error": str(e)}
+
 # ════════════════════════════════════════════════════════
 # 5. LANGGRAPH PIPELINE
 # ════════════════════════════════════════════════════════
@@ -226,10 +231,16 @@ def login_user(username: str, password: str) -> dict:
         return {"success": False, "message": str(e)}
 
 # ════════════════════════════════════════════════════════
-# 7. FASTAPI APP
+# 7. FASTAPI APP  (+ rate limiting setup)
 # ════════════════════════════════════════════════════════
 
 app = FastAPI(title="DataMind AI", description="Intelligent Data Analyst API")
+
+# Rate limiter — tracks requests per user IP address
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+# When someone exceeds the limit, return a clean "429 Too Many Requests" error
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 class RegisterRequest(BaseModel):
     username: str
@@ -243,31 +254,42 @@ class QuestionRequest(BaseModel):
     question: str
     username: str
 
+# ── Health check — confirms the API is alive (for monitoring) ──
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+# ── Register — max 5 per minute (prevents spam account creation) ──
 @app.post("/register")
-def register(request: RegisterRequest):
-    return register_user(request.username, request.password)
+@limiter.limit("5/minute")
+def register(request: Request, body: RegisterRequest):
+    return register_user(body.username, body.password)
 
+# ── Login — max 5 per minute (prevents password brute-forcing) ──
 @app.post("/login")
-def login(request: LoginRequest):
-    return login_user(request.username, request.password)
+@limiter.limit("5/minute")
+def login(request: Request, body: LoginRequest):
+    return login_user(body.username, body.password)
 
+# ── Ask — max 10 per minute (protects the LLM from spam/cost abuse) ──
 @app.post("/ask")
-def ask_question(request: QuestionRequest):
+@limiter.limit("10/minute")
+def ask_question(request: Request, body: QuestionRequest):
     result = pipeline.invoke({
-        "question":     request.question,
-        "username":     request.username,
+        "question":     body.question,
+        "username":     body.username,
         "schema":       "",
         "sql_query":    "",
         "raw_results":  "",
-        "raw_data":     "",        # ← add this
+        "raw_data":     "",
         "final_answer": "",
         "error":        ""
     })
     return {
-        "question":  request.question,
+        "question":  body.question,
         "answer":    result["final_answer"],
         "sql_query": result["sql_query"],
-        "raw_data":  json.loads(result["raw_data"]) if result.get("raw_data") else []  
+        "raw_data":  json.loads(result["raw_data"]) if result.get("raw_data") else []
     }
 
 @app.get("/history/{username}")
