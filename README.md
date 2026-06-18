@@ -22,9 +22,11 @@ flowchart LR
     A1 --> A2[SQL Generator]
     A2 --> A3[SQL Executor]
     A3 --> A4[Results Formatter]
+    A1 -.reads schema.-> DB[(PostgreSQL - Supabase)]
     A2 -.uses.-> LLM[Groq LLaMA 3.3 70B]
+    A3 -.runs query.-> DB
     A4 -.uses.-> LLM
-    A3 --> DB[(PostgreSQL - Supabase)]
+    A4 -.saves history.-> DB
     A4 -->|answer + data| B
     B -->|JSON response| F
     F --> U
@@ -56,15 +58,18 @@ flowchart LR
 **Login screen**
 
 ![Login screen](screenshots/login.png)
+<br>
 
 **Asking a question with a chart**
 
 ![Asking a question and chart](screenshots/answer.png)
 
+<br>
 **Query history**
 
 ![Query history](screenshots/history.png)
 
+<br>
 
 ## 🛠️ Tech Stack
 - **Backend:** FastAPI (deployed on Render)
