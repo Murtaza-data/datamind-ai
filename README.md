@@ -13,8 +13,10 @@ Companies sit on huge amounts of data, but **only technical staff can query it.*
 
 ## 🏗️ Architecture
 
+## 🏗️ Architecture
+
 ```mermaid
-flowchart LR
+flowchart TD
     U[User] --> F[Streamlit Frontend - Streamlit Cloud]
     F -->|API request| B[FastAPI Backend - Render]
     B --> P{LangGraph 4-Agent Pipeline}
