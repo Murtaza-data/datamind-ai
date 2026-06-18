@@ -52,9 +52,19 @@ flowchart LR
 - **Production hardening** — health check endpoint + rate limiting
 
 ## 📸 Screenshots
+
+**Login screen**
+
 ![Login screen](screenshots/login.png)
+
+**Asking a question with a chart**
+
 ![Asking a question and chart](screenshots/answer.png)
+
+**Query history**
+
 ![Query history](screenshots/history.png)
+
 
 ## 🛠️ Tech Stack
 - **Backend:** FastAPI (deployed on Render)
