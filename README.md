@@ -11,7 +11,7 @@ Companies sit on huge amounts of data, but **only technical staff can query it.*
 
 **DataMind AI removes that bottleneck** — anyone can ask business questions in plain English and get instant answers, charts, and the underlying data, without knowing SQL.
 
-## 🏗️ Architecture
+
 
 ## 🏗️ Architecture
 
@@ -25,7 +25,7 @@ flowchart TD
     A2 --> A3[SQL Executor]
     A3 --> A4[Results Formatter]
     A1 -.reads schema.-> DB[(PostgreSQL - Supabase)]
-    A2 -.uses.-> LLM[Groq LLaMA 3.3 70B]
+    A2 -.uses.-> LLM[Groq GPT-OSS 120B]
     A3 -.runs query.-> DB
     A4 -.uses.-> LLM
     A4 -.saves history.-> DB
@@ -78,7 +78,7 @@ flowchart TD
 - **Backend:** FastAPI (deployed on Render)
 - **Frontend:** Streamlit (deployed on Streamlit Cloud)
 - **Agents:** LangGraph (4-agent pipeline)
-- **LLM:** Groq + LLaMA 3.3 70B
+- **LLM:** Groq + GPT-OSS 120B
 - **Database:** PostgreSQL (Supabase)
 - **Visualization:** Plotly
 - **Auth:** SHA-256 password hashing
