@@ -304,9 +304,21 @@ def get_history(username: str):
         rows = result.fetchall()
     return [{"question": r[0], "answer": r[1], "timestamp": r[2]} for r in rows]
 
+@app.get("/keepalive")
+def keepalive():
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "alive"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
 # ════════════════════════════════════════════════════════
 # 8. RUN SERVER
 # ════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
